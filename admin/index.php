@@ -8,6 +8,7 @@ $totalVideos   = $db->query("SELECT COUNT(*) FROM videos")->fetchColumn();
 $totalUsers    = $db->query("SELECT COUNT(*) FROM users")->fetchColumn();
 $totalViews    = $db->query("SELECT SUM(views) FROM videos")->fetchColumn() ?: 0;
 $totalComments = $db->query("SELECT COUNT(*) FROM comments")->fetchColumn();
+$draftCount    = $db->query("SELECT COUNT(*) FROM videos WHERE status='draft'")->fetchColumn();
 
 $recentVideos = $db->query("SELECT v.*, c.name AS cat FROM videos v
     LEFT JOIN categories c ON c.id = v.category_id
@@ -25,6 +26,12 @@ require_once '../includes/header.php';
       <div class="stat-card"><div class="sc-val"><?= formatViews((int)$totalViews) ?></div><div class="sc-label">Total Views</div></div>
       <div class="stat-card"><div class="sc-val"><?= number_format($totalComments) ?></div><div class="sc-label">Comments</div></div>
     </div>
+
+    <?php if ($draftCount > 0): ?>
+    <div class="alert alert-info">
+      <i class="ti ti-clock"></i> Ada <b><?= $draftCount ?></b> video status <b>Draft</b> menunggu approval. <a href="videos.php?status=draft" style="color:var(--accent)">Lihat & approve →</a>
+    </div>
+    <?php endif; ?>
 
     <div class="add-row"><h3>Recently Added Videos</h3><a href="videos.php" class="btn-ghost btn-sm">Manage All Videos →</a></div>
     <table class="data-table">

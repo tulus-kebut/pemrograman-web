@@ -21,13 +21,17 @@ if ($editId) {
     }
 }
 
-// ── Delete ──
 if (isset($_GET['delete'])) {
     $db->prepare('DELETE FROM videos WHERE id = ?')->execute([(int)$_GET['delete']]);
     header('Location: videos.php'); exit;
 }
 
-// ── Create / Update ──
+// Quick approve draft -> live
+if (isset($_GET['approve'])) {
+    $db->prepare("UPDATE videos SET status='live' WHERE id = ?")->execute([(int)$_GET['approve']]);
+    header('Location: videos.php'); exit;
+}
+
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id          = (int)($_POST['id'] ?? 0);
@@ -60,8 +64,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$videos = $db->query("SELECT v.*, c.name AS cat FROM videos v
-    LEFT JOIN categories c ON c.id = v.category_id ORDER BY v.created_at DESC")->fetchAll();
+$statusFilter = $_GET['status'] ?? '';
+$sql = "SELECT v.*, c.name AS cat FROM videos v LEFT JOIN categories c ON c.id = v.category_id";
+$params = [];
+if ($statusFilter) { $sql .= " WHERE v.status = ?"; $params[] = $statusFilter; }
+$sql .= " ORDER BY v.created_at DESC";
+$stmt = $db->prepare($sql);
+$stmt->execute($params);
+$videos = $stmt->fetchAll();
 
 require_once '../includes/header.php';
 ?>
@@ -69,62 +79,41 @@ require_once '../includes/header.php';
   <?php include '_sidebar.php'; ?>
   <div class="admin-content">
     <div class="admin-title">Manage Videos</div>
-
     <?php if ($error): ?><div class="alert alert-error"><?= e($error) ?></div><?php endif; ?>
 
-    <!-- Add / Edit form -->
     <div class="admin-form-card" style="margin-bottom:24px">
       <h3 style="font-size:14px;color:var(--cream);margin-bottom:14px"><?= $editVideo ? 'Edit Video: ' . e($editVideo['title']) : 'Add New Video' ?></h3>
       <form method="POST">
         <input type="hidden" name="id" value="<?= $editVideo['id'] ?? '' ?>"/>
-        <div class="form-group">
-          <label class="form-label">Title</label>
-          <input class="form-input" type="text" name="title" required value="<?= e($editVideo['title'] ?? '') ?>"/>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Description</label>
-          <textarea class="form-input" name="description"><?= e($editVideo['description'] ?? '') ?></textarea>
-        </div>
+        <div class="form-group"><label class="form-label">Title</label><input class="form-input" type="text" name="title" required value="<?= e($editVideo['title'] ?? '') ?>"/></div>
+        <div class="form-group"><label class="form-label">Description</label><textarea class="form-input" name="description"><?= e($editVideo['description'] ?? '') ?></textarea></div>
         <div class="form-row-2">
-          <div class="form-group">
-            <label class="form-label">Video URL / Path</label>
-            <input class="form-input" type="text" name="video_url" required placeholder="uploads/videos/file.mp4" value="<?= e($editVideo['video_url'] ?? '') ?>"/>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Thumbnail Path</label>
-            <input class="form-input" type="text" name="thumbnail" placeholder="uploads/thumbs/file.jpg" value="<?= e($editVideo['thumbnail'] ?? '') ?>"/>
-          </div>
+          <div class="form-group"><label class="form-label">Video URL / Path</label><input class="form-input" type="text" name="video_url" required placeholder="uploads/videos/file.mp4" value="<?= e($editVideo['video_url'] ?? '') ?>"/></div>
+          <div class="form-group"><label class="form-label">Thumbnail Path</label><input class="form-input" type="text" name="thumbnail" placeholder="uploads/thumbs/file.jpg" value="<?= e($editVideo['thumbnail'] ?? '') ?>"/></div>
         </div>
         <div class="form-row-2">
           <div class="form-group">
             <label class="form-label">Category</label>
             <select class="form-input" name="category_id">
               <option value="">— None —</option>
-              <?php foreach ($categories as $c): ?>
-              <option value="<?= $c['id'] ?>" <?= ($editVideo['category_id'] ?? 0) == $c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option>
-              <?php endforeach; ?>
+              <?php foreach ($categories as $c): ?><option value="<?= $c['id'] ?>" <?= ($editVideo['category_id']??0)==$c['id']?'selected':'' ?>><?= e($c['name']) ?></option><?php endforeach; ?>
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Duration (seconds)</label>
-            <input class="form-input" type="number" name="duration_sec" min="0" value="<?= e((string)($editVideo['duration_sec'] ?? 0)) ?>"/>
-          </div>
+          <div class="form-group"><label class="form-label">Duration (seconds)</label><input class="form-input" type="number" name="duration_sec" min="0" value="<?= e((string)($editVideo['duration_sec'] ?? 0)) ?>"/></div>
         </div>
         <div class="form-group">
           <label class="form-label">Status</label>
           <select class="form-input" name="status">
-            <option value="draft"  <?= ($editVideo['status'] ?? '')==='draft'  ? 'selected':'' ?>>Draft</option>
-            <option value="live"   <?= ($editVideo['status'] ?? '')==='live'   ? 'selected':'' ?>>Live</option>
-            <option value="banned" <?= ($editVideo['status'] ?? '')==='banned' ? 'selected':'' ?>>Banned</option>
+            <option value="draft"  <?= ($editVideo['status']??'')==='draft'?'selected':'' ?>>Draft</option>
+            <option value="live"   <?= ($editVideo['status']??'')==='live'?'selected':'' ?>>Live</option>
+            <option value="banned" <?= ($editVideo['status']??'')==='banned'?'selected':'' ?>>Banned</option>
           </select>
         </div>
         <div class="form-group">
           <label class="form-label">Genres</label>
           <div class="genre-checks">
             <?php foreach ($genres as $g): ?>
-            <label class="gc-label">
-              <input type="checkbox" name="genres[]" value="<?= $g['id'] ?>" <?= in_array($g['id'], $editGenreIds) ? 'checked' : '' ?>/> <?= e($g['name']) ?>
-            </label>
+            <label class="gc-label"><input type="checkbox" name="genres[]" value="<?= $g['id'] ?>" <?= in_array($g['id'],$editGenreIds)?'checked':'' ?>/> <?= e($g['name']) ?></label>
             <?php endforeach; ?>
           </div>
         </div>
@@ -133,7 +122,15 @@ require_once '../includes/header.php';
       </form>
     </div>
 
-    <div class="add-row"><h3>All Videos (<?= count($videos) ?>)</h3></div>
+    <div class="add-row">
+      <h3>All Videos (<?= count($videos) ?>)</h3>
+      <div class="tabs" style="margin-left:0">
+        <a href="videos.php" class="tab <?= !$statusFilter?'active':'' ?>">All</a>
+        <a href="videos.php?status=live" class="tab <?= $statusFilter==='live'?'active':'' ?>">Live</a>
+        <a href="videos.php?status=draft" class="tab <?= $statusFilter==='draft'?'active':'' ?>">Draft</a>
+        <a href="videos.php?status=banned" class="tab <?= $statusFilter==='banned'?'active':'' ?>">Banned</a>
+      </div>
+    </div>
     <table class="data-table">
       <thead><tr><th>Title</th><th>Category</th><th>Duration</th><th>Views</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>
@@ -151,6 +148,7 @@ require_once '../includes/header.php';
           <td>
             <div class="tbl-acts">
               <a href="../watch.php?id=<?= $v['id'] ?>" target="_blank" title="View"><i class="ti ti-eye"></i></a>
+              <?php if ($v['status']==='draft'): ?><a href="videos.php?approve=<?= $v['id'] ?>" title="Approve & Publish"><i class="ti ti-check"></i></a><?php endif; ?>
               <a href="videos.php?edit=<?= $v['id'] ?>" title="Edit"><i class="ti ti-edit"></i></a>
               <a href="videos.php?delete=<?= $v['id'] ?>" class="del" title="Delete" onclick="return confirm('Hapus video ini?')"><i class="ti ti-trash"></i></a>
             </div>
